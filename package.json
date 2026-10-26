@@ -1,10 +1,10 @@
 {
-  "name": "codex-relay",
+  "name": "codex-web-relay",
   "version": "0.2.3",
-  "description": "A mobile-friendly bridge for supervising a local Codex CLI, with authenticated terminal streaming, Git previews and optional Cloudflare tunnels.",
+  "description": "Control a local Codex CLI from your browser, with no mobile app required, authenticated terminal streaming, Git previews and optional Cloudflare tunnels.",
   "main": "dist/index.js",
   "bin": {
-    "codex-relay": "./dist/index.js"
+    "codex-web-relay": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -31,11 +31,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lmjxff/codex-relay.git"
+    "url": "git+https://github.com/lmjxff/codex-web-relay.git"
   },
-  "homepage": "https://github.com/lmjxff/codex-relay#readme",
+  "homepage": "https://github.com/lmjxff/codex-web-relay#readme",
   "bugs": {
-    "url": "https://github.com/lmjxff/codex-relay/issues"
+    "url": "https://github.com/lmjxff/codex-web-relay/issues"
   },
   "keywords": [
     "openai",

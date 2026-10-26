@@ -1,14 +1,14 @@
-# Codex Relay
+# Codex Web Relay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Follow a local Codex CLI session from your phone browser, send terminal input, and inspect Git changes. Relay provides a shared terminal, a mobile prompt bar, Git previews, and optional Cloudflare Tunnel connectivity.
+Codex Web Relay (`codex-web-relay`) lets you follow a local Codex CLI session from your phone browser, send terminal input, and inspect Git changes. No mobile app installation is required. Relay provides a shared Web terminal, a mobile prompt bar, Git previews, and optional Cloudflare Tunnel connectivity.
 
 **Local access only by default. No domain or Cloudflare account is needed to start.** This is an independent community project, not an official OpenAI product.
 
 ## Demo
 
-![Codex Relay web UI: send a task, confirm a sample edit, and inspect the Git diff](docs/assets/codex-relay-demo.gif)
+![Codex Web Relay web UI: send a task, confirm a sample edit, and inspect the Git diff](docs/assets/codex-relay-demo.gif)
 
 A 13-second loop: send terminal input → read the prompt → confirm the sample edit → inspect Git Diff.
 
@@ -38,8 +38,8 @@ A numbered menu inside the terminal is rendered text, not an HTML button. Tappin
 ## Quick start: this computer
 
 ```bash
-git clone https://github.com/lmjxff/codex-relay.git
-cd codex-relay
+git clone https://github.com/lmjxff/codex-web-relay.git
+cd codex-web-relay
 npm ci
 ```
 

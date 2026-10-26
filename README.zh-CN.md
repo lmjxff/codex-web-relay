@@ -1,14 +1,14 @@
-# Codex Relay
+# Codex Web Relay
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-用手机浏览器查看电脑上运行的 Codex CLI，发送终端输入，并预览 Git 改动。项目提供一个共享终端、适合手机的输入栏、代码差异预览，以及可选的 Cloudflare Tunnel 连接。
+Codex Web Relay（`codex-web-relay`）让你直接用手机浏览器查看电脑上运行的 Codex CLI，发送终端输入，并预览 Git 改动，**无需安装手机 App**。项目提供一个共享 Web 终端、适合手机的输入栏、代码差异预览，以及可选的 Cloudflare Tunnel 连接。
 
 **默认只允许本机访问，启动不需要域名或 Cloudflare 账号。** 本项目由社区独立开发，并非 OpenAI 官方产品。
 
 ## 操作演示
 
-![Codex Relay 网页操作：输入任务、确认示例修改、查看 Git 差异](docs/assets/codex-relay-demo.gif)
+![Codex Web Relay 网页操作：输入任务、确认示例修改、查看 Git 差异](docs/assets/codex-relay-demo.gif)
 
 13 秒循环演示：发送终端输入 → 阅读确认提示 → 确认示例修改 → 查看 Git Diff。
 
@@ -38,8 +38,8 @@
 ## 快速开始：先在电脑上使用
 
 ```bash
-git clone https://github.com/lmjxff/codex-relay.git
-cd codex-relay
+git clone https://github.com/lmjxff/codex-web-relay.git
+cd codex-web-relay
 npm ci
 ```
 
