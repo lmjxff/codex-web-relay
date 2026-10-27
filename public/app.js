@@ -58,6 +58,11 @@
   let restartPending = false;
   let restartTimer = null;
   let lastViewportSize = '';
+  let gitStatusRequest = null;
+  let gitDiffRequest = null;
+  let gitFiles = [];
+  let fileChipsKey = null;
+  let diffView = null;
   const renderQueue = [];
   let rendering = false;
 
@@ -86,12 +91,64 @@
     workspacePath.textContent = cwd;
   }
 
-  function showDiffState(key) {
-    diffContainer.innerHTML = '';
-    const message = document.createElement('div');
-    message.className = 'empty-state';
-    message.textContent = t(key);
-    diffContainer.appendChild(message);
+  function renderDiffView(view) {
+    // Timestamps from the server do not change the visible preview.
+    const key = JSON.stringify([selectedFile, language, view.state, view.omitted || []]);
+    if (diffView?.key === key && diffView.html === view.html) return;
+    const sameFile = diffView?.file === selectedFile;
+    const top = sameFile ? diffContainer.scrollTop : 0;
+    const left = sameFile ? diffContainer.scrollLeft : 0;
+    // diff2html puts wide lines in a separate scroller for each file.
+    const fileScrolls = new Map();
+    if (sameFile) {
+      for (const wrapper of diffContainer.querySelectorAll('.d2h-file-wrapper')) {
+        fileScrolls.set(wrapper.id, [...wrapper.querySelectorAll('.d2h-file-diff')]
+          .map(panel => ({ top: panel.scrollTop, left: panel.scrollLeft })));
+      }
+    }
+    diffContainer.innerHTML = view.html || '';
+    if (view.state) {
+      const message = document.createElement('div');
+      message.className = 'empty-state';
+      message.textContent = t(view.state);
+      diffContainer.appendChild(message);
+    }
+    if (view.omitted?.length) {
+      const notice = document.createElement('p');
+      notice.className = 'preview-notice';
+      notice.textContent = t('omitted', { files: view.omitted.map(item => `${item.file} (${item.reason})`).join(', ') });
+      diffContainer.prepend(notice);
+    }
+    diffView = { key, file: selectedFile, html: view.html };
+    diffContainer.scrollTop = top;
+    diffContainer.scrollLeft = left;
+    for (const wrapper of diffContainer.querySelectorAll('.d2h-file-wrapper')) {
+      const positions = fileScrolls.get(wrapper.id);
+      if (!positions) continue;
+      [...wrapper.querySelectorAll('.d2h-file-diff')].forEach((panel, index) => {
+        if (!positions[index]) return;
+        panel.scrollTop = positions[index].top;
+        panel.scrollLeft = positions[index].left;
+      });
+    }
+  }
+
+  function cancelGitRequest(request) {
+    if (!request) return;
+    clearTimeout(request.timer);
+    request.controller.abort();
+  }
+
+  function cancelDiffRequest() {
+    const previous = gitDiffRequest;
+    gitDiffRequest = null;
+    cancelGitRequest(previous);
+  }
+
+  function createGitRequest() {
+    const request = { controller: new AbortController(), language, file: selectedFile };
+    request.timer = setTimeout(() => request.controller.abort(), 12000);
+    return request;
   }
 
   function setPromptStatus(message, sending = false) {
@@ -159,7 +216,11 @@
     savePreference(languageKey, language);
     applyLanguage();
     fitTerminal();
-    if (isAuthenticated) refreshGitStatusAndDiff();
+    if (isAuthenticated) {
+      renderFileChips(gitFiles);
+      if (activeTab === 'diff') loadDiffHtml(selectedFile);
+      refreshGitStatusAndDiff();
+    }
   });
   fontSizeSelect.addEventListener('change', () => {
     const next = Number(fontSizeSelect.value);
@@ -240,6 +301,15 @@
 
   function showLockScreen(errorMsg = '') {
     isAuthenticated = false;
+    cancelGitRequest(gitStatusRequest);
+    gitStatusRequest = null;
+    cancelDiffRequest();
+    gitFiles = [];
+    selectedFile = '';
+    fileChipsKey = null;
+    diffView = null;
+    fileChipsContainer.innerHTML = '';
+    renderDiffView({ state: 'loadingDiff' });
     authOverlay.classList.remove('hidden');
     setMessage(authError, errorMsg);
     if (reconnectTimer) {
@@ -326,11 +396,12 @@
   });
 
   function authFetch(url, options = {}) {
+    const requestToken = authToken;
     const headers = Object.assign({}, options.headers || {}, {
       'x-relay-token': authToken,
     });
     return fetch(url, Object.assign({}, options, { headers })).then((res) => {
-      if (res.status === 401) {
+      if (res.status === 401 && requestToken === authToken && !options.signal?.aborted) {
         localStorage.removeItem(STORAGE_KEY);
         showLockScreen('loginExpired');
       }
@@ -538,8 +609,10 @@
     document.getElementById('panel-diff').classList.toggle('active', tabName === 'diff');
 
     if (tabName === 'terminal') {
+      cancelDiffRequest();
       setTimeout(fitTerminal, 50);
     } else if (tabName === 'diff') {
+      loadDiffHtml(selectedFile);
       refreshGitStatusAndDiff();
     }
   }
@@ -553,11 +626,14 @@
 
   // Git Status & Diff fetching
   async function refreshGitStatusAndDiff() {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || gitStatusRequest) return;
+    const request = createGitRequest();
+    gitStatusRequest = request;
     try {
-      const statusRes = await authFetch('/api/git/status');
+      const statusRes = await authFetch('/api/git/status', { signal: request.controller.signal });
       if (!statusRes.ok) throw new Error('Git status unavailable');
       const statusData = await statusRes.json();
+      if (!isAuthenticated || gitStatusRequest !== request || request.controller.signal.aborted) return;
 
       if (statusData.ok) {
         gitBranch.textContent = statusData.branch || 'HEAD';
@@ -569,30 +645,38 @@
         diffCountBadge.textContent = String(files.length);
         diffCountBadge.classList.toggle('has-changes', files.length > 0);
 
-        renderFileChips(files);
-      }
-
-      if (activeTab === 'diff') {
-        await loadDiffHtml(selectedFile);
+        gitFiles = files;
+        renderFileChips(gitFiles);
       }
     } catch {
-      if (activeTab === 'diff') {
-        showDiffState('gitUnavailable');
+      // A status failure must not replace a newer, independently loaded diff.
+      // The preview request reports its own current-file failure below.
+    } finally {
+      clearTimeout(request.timer);
+      if (gitStatusRequest === request) {
+        gitStatusRequest = null;
+        if (isAuthenticated && activeTab === 'diff') loadDiffHtml(selectedFile);
       }
     }
   }
 
   function renderFileChips(files) {
-    if (selectedFile && !files.some(item => item.file === selectedFile)) selectedFile = '';
+    if (selectedFile && !files.some(item => item.file === selectedFile)) {
+      selectedFile = '';
+      cancelDiffRequest();
+      if (activeTab === 'diff') renderDiffView({ state: 'loadingDiff' });
+    }
+    const key = JSON.stringify([language, selectedFile, files.map(item => [item.code, item.file])]);
+    if (fileChipsKey === key) return;
+    fileChipsKey = key;
+    const scrollLeft = fileChipsContainer.scrollLeft;
     fileChipsContainer.innerHTML = '';
 
     const allChip = document.createElement('button');
     allChip.className = `file-chip ${selectedFile === '' ? 'active' : ''}`;
     allChip.textContent = t('allFiles', { count: files.length });
     allChip.addEventListener('click', () => {
-      selectedFile = '';
-      renderFileChips(files);
-      loadDiffHtml('');
+      selectDiffFile('');
     });
     fileChipsContainer.appendChild(allChip);
 
@@ -601,51 +685,65 @@
       chip.className = `file-chip ${selectedFile === item.file ? 'active' : ''}`;
       chip.textContent = `${item.code} ${item.file}`;
       chip.addEventListener('click', () => {
-        selectedFile = item.file;
-        renderFileChips(files);
-        loadDiffHtml(item.file);
+        selectDiffFile(item.file);
       });
       fileChipsContainer.appendChild(chip);
     });
+    fileChipsContainer.scrollLeft = scrollLeft;
+  }
+
+  function selectDiffFile(file) {
+    if (selectedFile === file) return;
+    selectedFile = file;
+    cancelDiffRequest();
+    renderFileChips(gitFiles);
+    renderDiffView({ state: 'loadingDiff' });
+    loadDiffHtml(file);
   }
 
   async function loadDiffHtml(fileFilter) {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || activeTab !== 'diff') return;
+    if (gitDiffRequest?.file === fileFilter && gitDiffRequest.language === language) return;
+    cancelDiffRequest();
+    const request = createGitRequest();
+    gitDiffRequest = request;
+    const current = () => isAuthenticated && activeTab === 'diff' && selectedFile === fileFilter &&
+      gitDiffRequest === request && language === request.language;
+    if (diffView?.file !== fileFilter) renderDiffView({ state: 'loadingDiff' });
     try {
       const query = fileFilter ? `?file=${encodeURIComponent(fileFilter)}` : '';
-      const res = await authFetch(`/api/git/diff${query}`);
-      if (!res.ok) return;
+      const res = await authFetch(`/api/git/diff${query}`, { signal: request.controller.signal });
+      if (!res.ok) throw new Error('Git preview unavailable');
       const data = await res.json();
+      if (!current() || request.controller.signal.aborted) return;
 
       if (!data.ok) {
-        showDiffState('diffError');
+        renderDiffView({ state: 'diffError' });
         return;
       }
 
       if (!data.hasChanges) {
-        showDiffState('treeClean');
+        renderDiffView({ state: 'treeClean' });
         return;
       }
 
       if (!data.html) {
-        showDiffState('noTextPreview');
+        renderDiffView({ state: 'noTextPreview' });
         return;
       }
 
-      diffContainer.innerHTML = data.html;
-      if (data.omittedFiles?.length) {
-        const notice = document.createElement('p');
-        notice.className = 'preview-notice';
-        notice.textContent = t('omitted', { files: data.omittedFiles.map(item => `${item.file} (${item.reason})`).join(', ') });
-        diffContainer.prepend(notice);
-      }
+      renderDiffView({ html: data.html, omitted: data.omittedFiles || [] });
     } catch {
-      showDiffState('diffUnavailable');
+      if (current()) renderDiffView({ state: 'diffUnavailable' });
+    } finally {
+      clearTimeout(request.timer);
+      if (gitDiffRequest === request) gitDiffRequest = null;
     }
   }
 
   btnRefreshDiff.addEventListener('click', () => {
     hapticFeedback(15);
+    loadDiffHtml(selectedFile);
     refreshGitStatusAndDiff();
   });
 

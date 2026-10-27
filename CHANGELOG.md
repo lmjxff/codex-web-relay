@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stabilize Git previews across slow/out-of-order requests, file switches, language changes and locking. Coalesce pending requests, cancel obsolete previews, and avoid rebuilding unchanged previews/file chips while preserving same-file scroll positions.
+- 中文：修复旧 Git 请求覆盖新选择的问题，合并慢请求并取消过时预览；内容不变时保留页面节点，同一文件更新时保持滚动位置。
 - Add browser-local Chinese/English and terminal font preferences, expandable workspace paths, a quieter mobile control layout and an explicit shared-session restart confirmation.
 - 中文：新增中英文切换、终端字号记忆、工作目录展开和重启确认，整理手机操作区布局。
 - Correct first-sign-in guidance to use the local pairing page or the launch directory's `.env`, and add bilingual credential/connectivity troubleshooting.

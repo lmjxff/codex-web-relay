@@ -5,18 +5,23 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {project}=require('./helpers.cjs');
 
-async function browser({delayedWrites=false,preferences={},browserLanguage='zh-CN'}={}){
-  const elements=new Map(),sockets=[],timers=[],writes=[],actions=new Map();
-  function element(){return {value:'',textContent:'',innerHTML:'',hidden:false,disabled:false,
+async function browser({delayedWrites=false,preferences={},browserLanguage='zh-CN',fetchImpl}={}){
+  const elements=new Map(),sockets=[],timers=[],intervals=[],writes=[],actions=new Map(),tabs=new Map();
+  function element(){const node={value:'',textContent:'',hidden:false,disabled:false,children:[],scrollTop:0,scrollLeft:0,htmlWrites:0,
     classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},
     open:false,showModal(){this.open=true;},close(){this.open=false;},
-    appendChild(){},prepend(){},setAttribute(name,value){this[name]=value;},getAttribute(name){return this[name];},focus(){}};}
+    querySelectorAll(){return [];},appendChild(child){this.children.push(child);},prepend(child){this.children.unshift(child);},setAttribute(name,value){this[name]=value;},getAttribute(name){return this[name];},focus(){}};
+    let html='';Object.defineProperty(node,'innerHTML',{get(){return html;},set(value){html=value;this.children=[];this.scrollTop=0;this.scrollLeft=0;this.htmlWrites++;this.onHtmlChange?.(value);}});
+    return node;
+  }
   for(const match of fs.readFileSync(path.join(project,'public','index.html'),'utf8').matchAll(/data-action="([^"]+)"/g)) {
     const button=element();button['data-action']=match[1];actions.set(match[1],button);
   }
+  for(const name of ['terminal','diff']){const tab=element();tab['data-tab']=name;tabs.set(name,tab);}
   const document={documentElement:{lang:''},getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},
     querySelectorAll(selector){
       if(selector==='[data-action]')return [...actions.values()];
+      if(selector==='.tab-btn')return [...tabs.values()];
       if(selector==='[data-language-select]')return ['auth-language','ui-language'].map(id=>this.getElementById(id));
       return [];
     },createElement:element,title:'Relay'};
@@ -34,19 +39,154 @@ async function browser({delayedWrites=false,preferences={},browserLanguage='zh-C
     message(message){this.dispatch('message',{data:JSON.stringify(message)});}
   }
   const storage=new Map([['codex_relay_auth_token','synthetic-browser-test-credential'],...Object.entries(preferences)]);
-  const context={document,URLSearchParams,WebSocket:Socket,navigator:{language:browserLanguage},
+  const context={document,URLSearchParams,AbortController,WebSocket:Socket,navigator:{language:browserLanguage},
     localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     setTimeout(fn,delay){const timer={fn,delay};timers.push(timer);return timer;},clearTimeout(timer){if(timer)timer.cancelled=true;},
-    setInterval(){return 1;},clearInterval(){},
-    fetch:async url=>({ok:true,status:200,json:async()=>url.includes('auth')?{ok:true,cwd:'/synthetic'}:{ok:true,files:[]}}),
+    setInterval(fn,delay){const timer={fn,delay};intervals.push(timer);return timer;},clearInterval(timer){if(timer)timer.cancelled=true;},
+    fetch:fetchImpl|| (async url=>({ok:true,status:200,json:async()=>url.includes('auth')?{ok:true,cwd:'/synthetic'}:{ok:true,files:[]}})),
     window:{location:{hostname:'localhost',host:'localhost:3210',protocol:'http:',search:'',pathname:'/',hash:''},
       history:{replaceState(){}},addEventListener(){},Terminal:function(options){terminal.options=options;return terminal;},FitAddon:{FitAddon:function(){this.proposeDimensions=()=>({cols:120,rows:35});}}}};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(project,'public','i18n.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(project,'public','app.js'),'utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {elements,sockets,timers,terminal,writes,actions,storage,document,i18n:context.window.RelayI18n,submit(){elements.get('prompt-form').listeners.submit({preventDefault(){}});}};
+  return {elements,sockets,timers,intervals,terminal,writes,actions,tabs,storage,document,i18n:context.window.RelayI18n,submit(){elements.get('prompt-form').listeners.submit({preventDefault(){}});}};
 }
+
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+const gitFiles=[{file:'a.ts',code:'M'},{file:'b.ts',code:'M'}];
+async function diffPage(){
+  const requests=[];
+  const page=await browser({fetchImpl:(url,options={})=>{
+    if(url.includes('/auth/'))return Promise.resolve({ok:true,status:200,json:async()=>({ok:true,cwd:'/synthetic'})});
+    return new Promise((resolve,reject)=>requests.push({url,options,done:false,
+      respond(data,status=200){this.done=true;resolve({ok:status>=200&&status<300,status,json:async()=>data});},
+      reject(error){this.done=true;reject(error);}}));
+  }});
+  function statuses(files=gitFiles){for(const request of requests.filter(r=>!r.done&&r.url==='/api/git/status'))request.respond({ok:true,branch:'main',files});}
+  statuses();await flush();
+  page.tabs.get('diff').listeners.click();statuses();await flush();
+  const pending=file=>requests.filter(r=>!r.done&&r.url===`/api/git/diff${file?'?file='+encodeURIComponent(file):''}`).at(-1);
+  const choose=file=>page.elements.get('file-chips').children.find(chip=>chip.textContent.endsWith(file)).listeners.click();
+  return {...page,requests,statuses,pending,choose,poll(){page.intervals[0].fn();}};
+}
+
+test('late Git responses and failures cannot overwrite a newer file selection',async()=>{
+  const page=await diffPage();const all=page.pending('');
+  page.choose('a.ts');const a=page.pending('a.ts');
+  page.choose('b.ts');const b=page.pending('b.ts');
+  b.respond({ok:true,hasChanges:true,html:'B preview'});await flush();
+  a.respond({ok:true,hasChanges:true,html:'A preview'});await flush();
+  assert.equal(page.elements.get('diff-container').innerHTML,'B preview');
+  all.reject(Error('late failure'));await flush();
+  assert.equal(page.elements.get('diff-container').innerHTML,'B preview');
+  assert(a.options.signal.aborted);assert(all.options.signal.aborted);
+});
+
+test('unchanged Git polling retains DOM nodes, focus targets and both scroll axes',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container'),chips=page.elements.get('file-chips');
+  page.pending('').respond({ok:true,hasChanges:true,html:'same preview'});await flush();
+  diff.scrollTop=240;diff.scrollLeft=19;chips.scrollLeft=32;
+  const writes=diff.htmlWrites,firstChip=chips.children[0];
+  page.poll();page.statuses();await flush();
+  page.pending('').respond({ok:true,hasChanges:true,html:'same preview'});await flush();
+  assert.equal(diff.htmlWrites,writes);assert.equal(diff.scrollTop,240);assert.equal(diff.scrollLeft,19);
+  assert.equal(chips.children[0],firstChip);assert.equal(chips.scrollLeft,32);
+});
+
+test('updated previews keep current-file scrolling and reset scrolling for a different file',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container');
+  page.pending('').respond({ok:true,hasChanges:true,html:'initial preview'});await flush();
+  diff.scrollTop=140;diff.scrollLeft=12;
+  page.poll();page.statuses();await flush();
+  page.pending('').respond({ok:true,hasChanges:true,html:'updated preview'});await flush();
+  assert.equal(diff.innerHTML,'updated preview');assert.equal(diff.scrollTop,140);assert.equal(diff.scrollLeft,12);
+  page.choose('a.ts');assert.equal(diff.scrollTop,0);assert(!diff.innerHTML.includes('updated preview'));
+  page.pending('a.ts').respond({ok:true,hasChanges:true,html:'A preview'});await flush();
+  assert.equal(diff.scrollTop,0);assert.equal(diff.scrollLeft,0);
+});
+
+test('slow Git requests are coalesced instead of piling up at each polling interval',async()=>{
+  const page=await diffPage();
+  for(let i=0;i<3;i++)page.poll();
+  assert.equal(page.requests.filter(r=>!r.done&&r.url==='/api/git/status').length,1);
+  page.statuses();await flush();
+  assert.equal(page.requests.filter(r=>!r.done&&r.url==='/api/git/diff').length,1);
+});
+
+test('horizontal positions follow file identities when diff2html rebuilds and reorders file panels',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container');
+  let wrappers=[];
+  diff.querySelectorAll=selector=>selector==='.d2h-file-wrapper'?wrappers:[];
+  diff.onHtmlChange=html=>{
+    const ids=html==='first order'?['file-a','file-b']:['file-b','file-a'];
+    wrappers=ids.map(id=>({id,panels:[{scrollTop:0,scrollLeft:0}],querySelectorAll(){return this.panels;}}));
+  };
+  page.pending('').respond({ok:true,hasChanges:true,html:'first order'});await flush();
+  wrappers[0].panels[0].scrollLeft=180;wrappers[1].panels[0].scrollLeft=70;
+  page.poll();page.statuses();await flush();
+  page.pending('').respond({ok:true,hasChanges:true,html:'second order'});await flush();
+  assert.equal(wrappers.find(wrapper=>wrapper.id==='file-a').panels[0].scrollLeft,180);
+  assert.equal(wrappers.find(wrapper=>wrapper.id==='file-b').panels[0].scrollLeft,70);
+});
+
+test('leaving Git Diff or locking cancels pending previews and ignores late responses',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container'),old=page.pending('');
+  page.tabs.get('terminal').listeners.click();const writes=diff.htmlWrites;
+  old.respond({ok:true,hasChanges:true,html:'hidden old preview'});await flush();
+  assert.equal(diff.htmlWrites,writes);assert(old.options.signal.aborted);
+  page.tabs.get('diff').listeners.click();page.statuses();await flush();
+  const locked=page.pending('');page.elements.get('btn-lock').listeners.click();
+  locked.respond({ok:true,hasChanges:true,html:'private old preview'});await flush();
+  assert(!diff.innerHTML.includes('private old preview'));assert(locked.options.signal.aborted);
+});
+
+test('an old unauthorized Git response cannot lock a newly authenticated session',async()=>{
+  const page=await diffPage(),old=page.pending('');
+  page.elements.get('btn-lock').listeners.click();
+  page.elements.get('auth-token-input').value='synthetic-new-session-credential';
+  await page.elements.get('auth-form').listeners.submit({preventDefault(){}});
+  page.statuses();await flush();
+  old.respond({ok:false},401);await flush();
+  assert.equal(page.storage.get('codex_relay_auth_token'),'synthetic-new-session-credential');
+});
+
+test('a removed selected file falls back to all changes without restoring its stale preview',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container');
+  page.choose('b.ts');const b=page.pending('b.ts');
+  page.poll();page.statuses([gitFiles[0]]);await flush();
+  page.pending('').respond({ok:true,hasChanges:true,html:'remaining A preview'});await flush();
+  b.respond({ok:true,hasChanges:true,html:'removed B preview'});await flush();
+  assert.equal(diff.innerHTML,'remaining A preview');assert(b.options.signal.aborted);
+});
+
+test('current preview failures and timeouts are visible and manual refresh can recover',async()=>{
+  const page=await diffPage(),diff=page.elements.get('diff-container');
+  page.pending('').respond({ok:false},500);await flush();
+  assert(diff.children[0].textContent.includes('请求失败'));
+  page.elements.get('btn-refresh-diff').listeners.click();
+  const request=page.pending('');assert(request);
+  const deadline=page.timers.find(timer=>timer.delay===12000&&!timer.cancelled);
+  deadline.fn();assert(request.options.signal.aborted);
+  request.reject(Object.assign(Error('request aborted'),{name:'AbortError'}));await flush();
+  assert(diff.children[0].textContent.includes('请求失败'));
+  page.elements.get('btn-refresh-diff').listeners.click();
+  page.pending('').respond({ok:true,hasChanges:true,html:'recovered preview'});await flush();
+  assert.equal(diff.innerHTML,'recovered preview');
+});
+
+test('language changes invalidate pending previews and translate unchanged empty states',async()=>{
+  const page=await diffPage(),old=page.pending(''),diff=page.elements.get('diff-container');
+  const language=page.elements.get('ui-language');language.value='en';language.listeners.change();
+  const english=page.pending('');assert.notEqual(english,old);assert(old.options.signal.aborted);
+  english.respond({ok:true,hasChanges:false});await flush();
+  assert(diff.children[0].textContent.includes('Working tree clean'));
+  old.respond({ok:true,hasChanges:true,html:'old locale preview'});await flush();
+  assert(!diff.innerHTML.includes('old locale preview'));
+  language.value='zh-CN';language.listeners.change();
+  page.pending('').respond({ok:true,hasChanges:false});await flush();
+  assert(diff.children[0].textContent.includes('工作区干净'));
+});
 
 test('language and font preferences restore and change without replacing the terminal or draft',async()=>{
   const page=await browser({preferences:{codex_relay_language:'en',codex_relay_font_size:'17'}}),socket=page.sockets[0];socket.open();

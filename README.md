@@ -148,6 +148,8 @@ The language selector is available before and after sign-in. Chinese/English int
 
 1. **Send** keeps text during disconnection or until acknowledgement. An acknowledgement means the PTY accepted a write, not that Codex finished. Inspect the terminal before retrying uncertain delivery. Deduplication lasts up to five minutes with a bounded in-memory cache; it does not guarantee exactly-once delivery across server restarts.
 2. **Git Diff** includes new directories and per-file filtering. Untracked files over 256 KiB are listed as omitted; binary files have no text preview. Overall Git output above 10 MiB can return an error. Use local Git for a complete review.
+
+   Switching files cancels obsolete preview requests so late responses cannot replace your current selection. Automatic refresh leaves unchanged previews in place and preserves horizontal/vertical scrolling when the same file changes; selecting another file starts at the top. If a selected file leaves the change list, the filter returns to all changes.
 3. **Restart** terminates the shared terminal and starts another. All browsers control the same session.
 4. All connected browsers share the smallest reported viewport size. A desktop may become narrower while a phone is connected; this keeps cursor movement and menu redraws consistent. Reconnection and resizing restore the server's parsed current screen, with up to 1,000 scrollback lines. This bounded in-memory view is not persistent/full task history.
 5. **Lock** removes this browser's saved credential. It does not revoke other browsers or rotate the server credential.
