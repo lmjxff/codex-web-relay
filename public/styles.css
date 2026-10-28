@@ -148,6 +148,8 @@ body {
 /* Header */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
@@ -202,6 +204,7 @@ body {
 
 .topbar-actions {
   display: flex;
+  margin-left: auto;
   align-items: center;
   gap: 6px;
   min-width: 0;

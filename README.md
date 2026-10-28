@@ -8,7 +8,7 @@ Codex Web Relay (`codex-web-relay`) lets you follow a local Codex CLI session fr
 
 ## Demo
 
-![Codex Web Relay web UI: send a task, confirm a sample edit, and inspect the Git diff](docs/assets/codex-relay-demo.gif)
+![Codex Web Relay web UI: send a task, confirm a sample edit, and inspect the Git diff](docs/assets/codex-web-relay-demo.gif)
 
 A 13-second loop: send terminal input → read the prompt → confirm the sample edit → inspect Git Diff.
 

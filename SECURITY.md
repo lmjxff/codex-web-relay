@@ -8,6 +8,6 @@ Keep `.env`, Cloudflare certificates/tokens, pairing QR codes, credential-bearin
 
 请保护 `.env`、Cloudflare 证书/Token、配对二维码、含凭据的链接和终端内容。泄露后停止 Relay，在本地轮换访问凭据并重启；若他人已获得终端权限，还应检查电脑及相关账号的其他凭据。
 
-Report vulnerabilities privately through the repository's [GitHub security advisory page](https://github.com/lmjxff/codex-relay/security/advisories/new) if private reporting is available. If it is unavailable, open an issue asking for a private contact without disclosing exploit details or secrets. No response-time guarantee is currently offered.
+Report vulnerabilities privately through the repository's [GitHub security advisory page](https://github.com/lmjxff/codex-web-relay/security/advisories/new) if private reporting is available. If it is unavailable, open an issue asking for a private contact without disclosing exploit details or secrets. No response-time guarantee is currently offered.
 
-如已启用私密报告，请通过仓库的 [GitHub 安全报告页面](https://github.com/lmjxff/codex-relay/security/advisories/new) 提交。若不可用，请发一个不含漏洞细节、利用步骤或秘密的 Issue，询问私下联系方式。目前不承诺固定响应时限。
+如已启用私密报告，请通过仓库的 [GitHub 安全报告页面](https://github.com/lmjxff/codex-web-relay/security/advisories/new) 提交。若不可用，请发一个不含漏洞细节、利用步骤或秘密的 Issue，询问私下联系方式。目前不承诺固定响应时限。

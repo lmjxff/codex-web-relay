@@ -2,7 +2,7 @@
   const messages = {
     'zh-CN': {
       language: '界面语言', fontSize: '终端字号', settings: '显示设置',
-      authTitle: 'Codex Relay 安全锁',
+      authTitle: 'Codex Web Relay 安全锁',
       authDescription: '在运行 Relay 的电脑上打开本地 /qr 配对页扫码，或从 Relay 启动目录的 .env 中读取 RELAY_AUTH_TOKEN 后输入。凭据不会显示在终端日志中。',
       authHelp: '第一次使用或无法连接？',
       authStep1: '先在电脑启动 Relay，再打开 http://localhost:3210/qr；如果改过端口，请使用对应端口。',
@@ -40,7 +40,7 @@
     },
     en: {
       language: 'Interface language', fontSize: 'Terminal font size', settings: 'Display settings',
-      authTitle: 'Codex Relay lock',
+      authTitle: 'Codex Web Relay lock',
       authDescription: 'On the computer running Relay, open the local /qr pairing page, or enter RELAY_AUTH_TOKEN from .env in the launch directory. Credentials are not printed in terminal logs.',
       authHelp: 'First visit or connection trouble?',
       authStep1: 'Start Relay on the computer, then open http://localhost:3210/qr there. Use your configured port if different.',

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use Codex Web Relay across browser/lock/pairing pages and startup/terminal logs, and refresh the bilingual README demonstration with the current interface.
+- 中文：统一网页、登录页、配对页及日志中的项目名称，并更新中英文说明中的演示。
 - Check browser connection liveness, revalidate on foreground/network return, and restore a shared snapshot without replaying input. Add bounded reconnect backoff and server transport checks that release stale clients.
 - 中文：新增前台心跳、锁屏/切网后的连接核对与画面恢复；保留草稿供手动处理，重连逐步退避，并清理失联客户端。
 - Stabilize Git previews across slow/out-of-order requests, file switches, language changes and locking. Coalesce pending requests, cancel obsolete previews, and avoid rebuilding unchanged previews/file chips while preserving same-file scroll positions.

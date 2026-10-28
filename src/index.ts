@@ -240,7 +240,7 @@ function spawnCodexPty(cols = 80, rows = 24): pty.IPty {
   void previousScreen.dispose().catch(screenError);
   broadcast({ type: 'session-reset', ...terminalDimensions });
 
-  const banner = `\r\n\x1b[1;36m[codex-relay]\x1b[0m Attached to workspace: \x1b[33m${TARGET_CWD}\x1b[0m\r\n`;
+  const banner = `\r\n\x1b[1;36m[codex-web-relay]\x1b[0m Attached to workspace: \x1b[33m${TARGET_CWD}\x1b[0m\r\n`;
   appendOutput(screen, banner);
 
   attachPtyLifecycle(proc, () => ptyProcess, (data: string) => {
@@ -249,7 +249,7 @@ function spawnCodexPty(cols = 80, rows = 24): pty.IPty {
     ptyProcess = null;
     lastTerminalExit = event;
     const color = event.kind === 'error' ? '31' : event.kind === 'unknown' ? '33' : '90';
-    const msg = `\r\n\x1b[${color}m[codex-relay] ${ptyExitMessage(event)}\x1b[0m\r\n`;
+    const msg = `\r\n\x1b[${color}m[codex-web-relay] ${ptyExitMessage(event)}\x1b[0m\r\n`;
     appendOutput(screen, msg);
     broadcast({ type: 'status', running: false, ...event });
   });
@@ -367,7 +367,7 @@ app.get('/qr', async (req: Request, res: Response, next: NextFunction) => {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Codex Relay — 手机扫码连接</title>
+  <title>Codex Web Relay — 手机扫码连接</title>
   <style>
     body { margin:0; background:#0d1117; color:#f0f6fc; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; box-sizing:border-box; }
     .container { max-width:760px; width:100%; background:#161b22; border:1px solid #30363d; border-radius:18px; padding:28px; box-shadow:0 20px 50px rgba(0,0,0,0.6); }
@@ -390,7 +390,7 @@ app.get('/qr', async (req: Request, res: Response, next: NextFunction) => {
 </head>
 <body>
   <div class="container">
-    <h1>📱 手机扫码远程控制 Codex CLI</h1>
+    <h1>📱 Codex Web Relay · 手机扫码连接</h1>
     <p class="sub">直接用手机相机、浏览器或微信扫一扫下方高清二维码，免输密码一键登录</p>
     <div class="grid">
       ${qr.publicMagicUrl ? `<div class="card">
@@ -763,7 +763,7 @@ let isShuttingDown = false;
 function gracefulShutdown(reason: string, exitCode = 0): void {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`\n[Lifecycle] 正在关闭 Codex Relay (${reason})，销毁公网隧道与终端进程...`);
+  console.log(`\n[Lifecycle] 正在关闭 Codex Web Relay (${reason})，销毁公网隧道与终端进程...`);
 
   stopActiveTunnel();
 
@@ -830,7 +830,7 @@ async function bootstrap(): Promise<void> {
     const localQrPageUrl = `http://localhost:${PORT}/qr`;
 
     console.log('====================================================');
-    console.log('  Codex Relay — Mobile Codex CLI Bridge');
+    console.log('  Codex Web Relay — Browser-based Codex CLI Bridge');
     console.log(`  Workspace   : ${TARGET_CWD}`);
     console.log(`  Command     : ${CODEX_CMD}`);
     console.log(`  Local URL   : http://localhost:${PORT}/`);

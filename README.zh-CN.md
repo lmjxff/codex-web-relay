@@ -8,7 +8,7 @@ Codex Web Relay（`codex-web-relay`）让你直接用手机浏览器查看电脑
 
 ## 操作演示
 
-![Codex Web Relay 网页操作：输入任务、确认示例修改、查看 Git 差异](docs/assets/codex-relay-demo.gif)
+![Codex Web Relay 网页操作：输入任务、确认示例修改、查看 Git 差异](docs/assets/codex-web-relay-demo.gif)
 
 13 秒循环演示：发送终端输入 → 阅读确认提示 → 确认示例修改 → 查看 Git Diff。
 
