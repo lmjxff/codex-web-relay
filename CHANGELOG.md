@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Check browser connection liveness, revalidate on foreground/network return, and restore a shared snapshot without replaying input. Add bounded reconnect backoff and server transport checks that release stale clients.
+- 中文：新增前台心跳、锁屏/切网后的连接核对与画面恢复；保留草稿供手动处理，重连逐步退避，并清理失联客户端。
 - Stabilize Git previews across slow/out-of-order requests, file switches, language changes and locking. Coalesce pending requests, cancel obsolete previews, and avoid rebuilding unchanged previews/file chips while preserving same-file scroll positions.
 - 中文：修复旧 Git 请求覆盖新选择的问题，合并慢请求并取消过时预览；内容不变时保留页面节点，同一文件更新时保持滚动位置。
 - Add browser-local Chinese/English and terminal font preferences, expandable workspace paths, a quieter mobile control layout and an explicit shared-session restart confirmation.

@@ -10,7 +10,7 @@ test('HTTP and WebSocket enforce auth, preserve Git paths and acknowledge input 
   const originalEnv={...process.env};
   const originalCwd=process.cwd();
   const processes=[];
-  let server,client,other,api;
+  let server,client,other,sleeping,api;
   try {
     repository(directory);
     fs.mkdirSync(path.join(directory,'new dir'));
@@ -24,7 +24,7 @@ test('HTTP and WebSocket enforce auth, preserve Git paths and acknowledge input 
       processes.push(proc);return proc;
     }};
     const loaded=loadWithMocks('index.js',{'node-pty':pty,'./tunnel':{stopActiveTunnel(){}}},
-      'exports.__test={ensureAuthTokenConfigured,buildQrPayload,authLimiter,wss,spawnCodexPty};');
+      'exports.__test={ensureAuthTokenConfigured,buildQrPayload,authLimiter,wss,spawnCodexPty,checkClientLiveness,liveClients};');
     server=loaded.server;api=loaded.__test;
     const token=await api.ensureAuthTokenConfigured();
     assert(token.length>=24);
@@ -67,6 +67,11 @@ test('HTTP and WebSocket enforce auth, preserve Git paths and acknowledge input 
       while(!predicate()){if(Date.now()>deadline)throw Error('WebSocket response timeout');await new Promise(resolve=>setTimeout(resolve,10));}
     }
     await waitFor(()=>messages.some(message=>message.type==='history'));
+    const initialHistory=messages.filter(message=>message.type==='history').length;
+    client.send(JSON.stringify({type:'ping',id:'heartbeat-check'}));
+    client.send(JSON.stringify({type:'sync'}));
+    await waitFor(()=>messages.some(message=>message.type==='pong'&&message.id==='heartbeat-check')&&messages.filter(message=>message.type==='history').length>initialHistory);
+    assert.equal(processes.length,1);assert.equal(processes[0].writes.length,0,'sync and heartbeat must not type or restart');
     client.send(JSON.stringify({type:'resize',cols:120,rows:35}));
     await waitFor(()=>processes[0].sizes.at(-1)?.cols===120);
     const otherMessages=[];
@@ -121,8 +126,22 @@ test('HTTP and WebSocket enforce auth, preserve Git paths and acknowledge input 
     await waitFor(()=>messages.some(message=>message.type==='action-error'&&message.id==='ended-action'));
     await waitFor(()=>messages.some(message=>message.type==='output'&&message.data.includes('did not report')));
     assert(!messages.some(message=>message.type==='output'&&message.data.includes('code=undefined')));
+    const histories=messages.filter(message=>message.type==='history').length;
+    client.send(JSON.stringify({type:'sync'}));
+    await waitFor(()=>messages.filter(message=>message.type==='history').length>histories);
+    assert.equal(processes.length,2,'sync must not restart an ended session');
+    assert.equal(messages.filter(message=>message.type==='status').at(-1).running,false);
+    const beforeClients=new Set(api.wss.clients);
+    sleeping=new WebSocket(base.replace('http','ws')+'/ws',{headers,autoPong:false});
+    await new Promise((resolve,reject)=>{sleeping.once('open',resolve);sleeping.once('error',reject);});
+    const sleeper=[...api.wss.clients].find(ws=>!beforeClients.has(ws));assert(sleeper);
+    api.checkClientLiveness();
+    await waitFor(()=>[...beforeClients].every(ws=>api.liveClients.has(ws)));
+    api.checkClientLiveness();
+    await waitFor(()=>!api.wss.clients.has(sleeper));
+    assert([...beforeClients].every(ws=>api.wss.clients.has(ws)),'responsive clients must remain connected');
   } finally {
-    client?.terminate();other?.terminate();
+    client?.terminate();other?.terminate();sleeping?.terminate();
     if(api){for(const ws of api.wss.clients)ws.terminate();await new Promise(resolve=>api.wss.close(resolve));}
     if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
     process.chdir(originalCwd);

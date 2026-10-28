@@ -5,8 +5,9 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {project}=require('./helpers.cjs');
 
-async function browser({delayedWrites=false,preferences={},browserLanguage='zh-CN',fetchImpl}={}){
+async function browser({delayedWrites=false,preferences={},browserLanguage='zh-CN',fetchImpl,autoPong=true}={}){
   const elements=new Map(),sockets=[],timers=[],intervals=[],writes=[],actions=new Map(),tabs=new Map();
+  const documentEvents={},windowEvents={};
   function element(){const node={value:'',textContent:'',hidden:false,disabled:false,children:[],scrollTop:0,scrollLeft:0,htmlWrites:0,
     classList:{add(){},remove(){},toggle(){}},listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},
     open:false,showModal(){this.open=true;},close(){this.open=false;},
@@ -18,7 +19,7 @@ async function browser({delayedWrites=false,preferences={},browserLanguage='zh-C
     const button=element();button['data-action']=match[1];actions.set(match[1],button);
   }
   for(const name of ['terminal','diff']){const tab=element();tab['data-tab']=name;tabs.set(name,tab);}
-  const document={documentElement:{lang:''},getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},
+  const document={visibilityState:'visible',addEventListener(type,fn){documentEvents[type]=fn;},documentElement:{lang:''},getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);},
     querySelectorAll(selector){
       if(selector==='[data-action]')return [...actions.values()];
       if(selector==='.tab-btn')return [...tabs.values()];
@@ -30,9 +31,10 @@ async function browser({delayedWrites=false,preferences={},browserLanguage='zh-C
     write(data,callback){const complete=()=>{this.output+=data;callback?.();};delayedWrites?writes.push(complete):complete();}};
   class Socket {
     static OPEN=1;
-    constructor(){this.readyState=0;this.listeners={};this.sent=[];sockets.push(this);}
+    static CONNECTING=0;
+    constructor(){this.readyState=0;this.listeners={};this.sent=[];this.heartbeats=[];sockets.push(this);}
     addEventListener(type,fn){this.listeners[type]=fn;}
-    send(raw){this.sent.push(JSON.parse(raw));}
+    send(raw){const message=JSON.parse(raw);if(message.type==='ping'){this.heartbeats.push(message);if(autoPong)this.message({type:'pong',id:message.id});}else this.sent.push(message);}
     close(){this.readyState=3;this.dispatch('close');}
     dispatch(type,data){this.listeners[type]?.(data);}
     open(){this.readyState=1;this.dispatch('open');}
@@ -45,15 +47,73 @@ async function browser({delayedWrites=false,preferences={},browserLanguage='zh-C
     setInterval(fn,delay){const timer={fn,delay};intervals.push(timer);return timer;},clearInterval(timer){if(timer)timer.cancelled=true;},
     fetch:fetchImpl|| (async url=>({ok:true,status:200,json:async()=>url.includes('auth')?{ok:true,cwd:'/synthetic'}:{ok:true,files:[]}})),
     window:{location:{hostname:'localhost',host:'localhost:3210',protocol:'http:',search:'',pathname:'/',hash:''},
-      history:{replaceState(){}},addEventListener(){},Terminal:function(options){terminal.options=options;return terminal;},FitAddon:{FitAddon:function(){this.proposeDimensions=()=>({cols:120,rows:35});}}}};
+      history:{replaceState(){}},addEventListener(type,fn){windowEvents[type]=fn;},Terminal:function(options){terminal.options=options;return terminal;},FitAddon:{FitAddon:function(){this.proposeDimensions=()=>({cols:120,rows:35});}}}};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(project,'public','i18n.js'),'utf8'),context);
   vm.runInContext(fs.readFileSync(path.join(project,'public','app.js'),'utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {elements,sockets,timers,intervals,terminal,writes,actions,tabs,storage,document,i18n:context.window.RelayI18n,submit(){elements.get('prompt-form').listeners.submit({preventDefault(){}});}};
+  return {elements,sockets,timers,intervals,terminal,writes,actions,tabs,storage,document,documentEvents,windowEvents,i18n:context.window.RelayI18n,submit(){elements.get('prompt-form').listeners.submit({preventDefault(){}});}};
 }
 
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+function fireTimer(page,delay){const timer=page.timers.findLast(item=>item.delay===delay&&!item.cancelled);assert(timer,`Missing timer ${delay}`);timer.cancelled=true;timer.fn();}
+
+test('a connection becomes healthy only after its pong and a lost heartbeat reconnects without resending input',async()=>{
+  const page=await browser({autoPong:false}),socket=page.sockets[0];socket.open();
+  assert.equal(socket.heartbeats.length,1);assert(page.actions.get('enter').disabled);
+  page.elements.get('prompt-input').value='retained draft';page.submit();assert.equal(socket.sent.length,0);
+  socket.message({type:'pong',id:'wrong'});assert(page.actions.get('enter').disabled);
+  socket.message({type:'pong',id:socket.heartbeats[0].id});assert(!page.actions.get('enter').disabled);
+  fireTimer(page,15000);fireTimer(page,10000);
+  assert.equal(socket.readyState,3);assert(page.actions.get('enter').disabled);
+  assert.equal(page.elements.get('prompt-input').value,'retained draft');
+  fireTimer(page,2000);assert.equal(page.sockets.length,2);assert.equal(page.sockets[1].sent.length,0);
+  socket.message({type:'pong',id:socket.heartbeats.at(-1).id});assert(page.actions.get('enter').disabled);
+});
+
+test('failed connections back off to 30 seconds and a healthy pong resets the delay',async()=>{
+  const page=await browser({autoPong:false});
+  for(const delay of [2000,4000,8000,16000,30000,30000]){
+    fireTimer(page,10000);fireTimer(page,delay);
+  }
+  const socket=page.sockets.at(-1);socket.open();socket.message({type:'pong',id:socket.heartbeats[0].id});
+  socket.close();fireTimer(page,2000);
+  assert.equal(page.sockets.length,8);
+});
+
+test('returning from the background checks liveness and restores a snapshot without replaying commands',async()=>{
+  const page=await browser({autoPong:false}),socket=page.sockets[0];socket.open();
+  socket.message({type:'pong',id:socket.heartbeats[0].id});
+  page.elements.get('prompt-input').value='uncertain task';page.submit();
+  page.document.visibilityState='hidden';page.documentEvents.visibilitychange();
+  assert(page.actions.get('enter').disabled);
+  page.document.visibilityState='visible';page.documentEvents.visibilitychange();page.windowEvents.pageshow();
+  assert.equal(socket.heartbeats.length,2);assert(page.actions.get('enter').disabled);
+  socket.message({type:'pong',id:socket.heartbeats[1].id});
+  assert.equal(socket.sent.filter(message=>message.type==='sync').length,1);
+  assert.equal(socket.sent.filter(message=>message.type==='input').length,1);
+  assert(!socket.sent.some(message=>['action','restart'].includes(message.type)));
+  socket.message({type:'history',cols:80,rows:24,data:'current screen'});
+  assert.equal(page.terminal.output,'current screen');assert.equal(page.elements.get('prompt-input').value,'uncertain task');
+});
+
+test('offline waits for online and locking prevents subsequent reconnect events',async()=>{
+  const page=await browser(),socket=page.sockets[0];socket.open();
+  page.windowEvents.offline();assert.equal(socket.readyState,3);
+  assert(page.elements.get('connection-status').textContent.includes('网络已断开'));
+  assert(!page.timers.some(timer=>timer.delay===2000&&!timer.cancelled));
+  page.windowEvents.online();assert.equal(page.sockets.length,2);
+  page.elements.get('btn-lock').listeners.click();
+  page.windowEvents.online();page.windowEvents.pageshow();assert.equal(page.sockets.length,2);
+});
+
+test('a connecting socket suspended in the background still has a deadline on return',async()=>{
+  const page=await browser();
+  page.document.visibilityState='hidden';page.documentEvents.visibilitychange();
+  page.document.visibilityState='visible';page.documentEvents.visibilitychange();
+  fireTimer(page,10000);assert.equal(page.sockets[0].readyState,3);
+  fireTimer(page,2000);assert.equal(page.sockets.length,2);
+});
 const gitFiles=[{file:'a.ts',code:'M'},{file:'b.ts',code:'M'}];
 async function diffPage(){
   const requests=[];

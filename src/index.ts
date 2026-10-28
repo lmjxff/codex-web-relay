@@ -134,7 +134,7 @@ app.get('/vendor/diff2html.css', (_req, res) => res.sendFile(require.resolve('di
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 interface WsClientMessage {
-  type: 'input' | 'resize' | 'action' | 'restart' | 'ping';
+  type: 'input' | 'resize' | 'action' | 'restart' | 'ping' | 'sync';
   data?: string;
   cols?: number;
   rows?: number;
@@ -530,6 +530,17 @@ app.get('/api/git/diff', async (req: Request, res: Response) => {
 
 export const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 });
+const liveClients = new WeakSet<WebSocket>();
+function checkClientLiveness(): void {
+  for (const client of wss.clients) {
+    if (!liveClients.has(client)) { client.terminate(); continue; }
+    liveClients.delete(client);
+    if (client.readyState === WebSocket.OPEN) client.ping();
+  }
+}
+const clientHeartbeat = setInterval(checkClientLiveness, 30000);
+clientHeartbeat.unref();
+wss.on('close', () => clearInterval(clientHeartbeat));
 
 // Connection Isolation: Strictly authenticate every WebSocket upgrade request
 server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -574,9 +585,23 @@ server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) =>
   }
 });
 
+function sendSessionState(ws: WebSocket): void {
+  ws.send(JSON.stringify({
+    type: 'status', running: Boolean(ptyProcess), ...(lastTerminalExit || {}),
+    pid: ptyProcess?.pid ?? null, cwd: TARGET_CWD, cmd: CODEX_CMD,
+    tunnelUrl: activeTunnel?.isReady() ? activeTunnel.url : null,
+  }));
+  const screen = terminalScreen;
+  void screen.snapshot(snapshot => {
+    if (screen === terminalScreen && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'history', ...snapshot }));
+  }).catch(screenError);
+}
+
 wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
   const clientIp = getClientIp(request);
   clients.add(ws);
+  liveClients.add(ws);
+  ws.on('pong', () => liveClients.add(ws));
   console.log(`[WebSocket] Authenticated client connected (${clientIp}), active=${clients.size}`);
 
   if (!ptyProcess && !terminalStarted) {
@@ -588,22 +613,7 @@ wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
     }
   }
 
-  ws.send(
-    JSON.stringify({
-      type: 'status',
-      running: Boolean(ptyProcess),
-      ...(lastTerminalExit || {}),
-      pid: ptyProcess?.pid ?? null,
-      cwd: TARGET_CWD,
-      cmd: CODEX_CMD,
-      tunnelUrl: activeTunnel?.isReady() ? activeTunnel.url : null,
-    })
-  );
-
-  const screen = terminalScreen;
-  void screen.snapshot(snapshot => {
-    if (screen === terminalScreen && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'history', ...snapshot }));
-  }).catch(screenError);
+  sendSessionState(ws);
 
   ws.on('message', (raw: Buffer | string) => {
     let messageId: string | undefined;
@@ -613,6 +623,12 @@ wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
       messageType = msg.type;
       messageId = typeof msg.id === 'string' && msg.id.length <= 128 ? msg.id : undefined;
       switch (msg.type) {
+        case 'sync':
+          sendSessionState(ws);
+          break;
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong', id: messageId, ts: Date.now() }));
+          break;
         case 'input':
           if (typeof msg.data === 'string' && msg.data.length <= 16 * 1024) {
             if (messageId) {
@@ -660,9 +676,6 @@ wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
           break;
         case 'restart':
           spawnCodexPty(msg.cols || 80, msg.rows || 24);
-          break;
-        case 'ping':
-          ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
           break;
       }
     } catch {

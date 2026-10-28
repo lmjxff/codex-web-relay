@@ -47,6 +47,15 @@
   let selectedFile = '';
   let ws = null;
   let reconnectTimer = null;
+  let reconnectDelay = 2000;
+  let heartbeatTimer = null;
+  let heartbeatDeadline = null;
+  let connectDeadline = null;
+  let heartbeatId = null;
+  let connectionHealthy = false;
+  let resumeSnapshot = false;
+  let networkOffline = navigator.onLine === false;
+  let heartbeatSequence = 0;
   let pollTimer = null;
   let authToken = '';
   let isAuthenticated = false;
@@ -82,7 +91,7 @@
     }
     for (const [element, message] of localizedMessages) element.textContent = t(message.key, message.params);
     for (const select of languageSelects) select.value = language;
-    wsDot.title = t(ws?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected');
+    wsDot.title = connectionStatus.textContent || t('disconnected');
   }
 
   function setWorkspace(cwd) {
@@ -164,7 +173,7 @@
   }
 
   function updateActionButtons() {
-    const connected = isAuthenticated && ws?.readyState === WebSocket.OPEN;
+    const connected = isAuthenticated && connectionHealthy && ws?.readyState === WebSocket.OPEN;
     for (const button of actionButtons) {
       button.disabled = !connected || Boolean(pendingAction) || restartPending ||
         (terminalRunning === false && button.getAttribute('data-action') !== 'start_codex');
@@ -284,7 +293,7 @@
 
   // Forward direct terminal keystrokes to PTY over WebSocket
   term.onData((data) => {
-    if (isAuthenticated && ws && ws.readyState === WebSocket.OPEN) {
+    if (isAuthenticated && connectionHealthy && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'input', data }));
     }
   });
@@ -301,6 +310,10 @@
 
   function showLockScreen(errorMsg = '') {
     isAuthenticated = false;
+    stopConnectionTimers();
+    connectionHealthy = false;
+    resumeSnapshot = false;
+    reconnectDelay = 2000;
     cancelGitRequest(gitStatusRequest);
     gitStatusRequest = null;
     cancelDiffRequest();
@@ -411,6 +424,7 @@
 
   function connectWebSocket() {
     if (!isAuthenticated || !authToken) return;
+    if (networkOffline || document.visibilityState === 'hidden') { scheduleReconnect(); return; }
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -423,18 +437,22 @@
       ws = null;
       previous.close();
     }
-    const connection = new WebSocket(wsUrl);
+    stopConnectionTimers();
+    connectionHealthy = false;
+    let connection;
+    try { connection = new WebSocket(wsUrl); }
+    catch { scheduleReconnect(); return; }
     ws = connection;
     setMessage(connectionStatus, 'connecting');
     updateActionButtons();
     lastViewportSize = '';
+    connectDeadline = setTimeout(() => loseConnection(connection), 10000);
 
     connection.addEventListener('open', () => {
       if (ws !== connection) return;
-      wsDot.classList.add('connected');
-      wsDot.title = t('connected');
-      setMessage(connectionStatus, 'connected');
-      updateActionButtons();
+      clearTimeout(connectDeadline);
+      connectDeadline = null;
+      checkConnection(connection);
       setTimeout(fitTerminal, 80);
     });
 
@@ -442,7 +460,26 @@
       if (ws !== connection) return;
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'history' && typeof msg.data === 'string') {
+        if (msg.type === 'pong') {
+          if (!heartbeatId || (msg.id !== undefined && msg.id !== heartbeatId)) return;
+          clearTimeout(heartbeatDeadline);
+          heartbeatDeadline = null;
+          heartbeatId = null;
+          connectionHealthy = true;
+          reconnectDelay = 2000;
+          wsDot.classList.add('connected');
+          setMessage(connectionStatus, 'connected');
+          wsDot.title = t('connected');
+          updateActionButtons();
+          if (resumeSnapshot) {
+            resumeSnapshot = false;
+            connection.send(JSON.stringify({ type: 'sync' }));
+            lastViewportSize = '';
+            fitTerminal();
+            refreshGitStatusAndDiff();
+          }
+          heartbeatTimer = setTimeout(() => checkConnection(connection), 15000);
+        } else if (msg.type === 'history' && typeof msg.data === 'string') {
           renderTerminal(msg);
         } else if (msg.type === 'output' && typeof msg.data === 'string') {
           renderTerminal(msg);
@@ -481,31 +518,108 @@
       }
     });
 
-    connection.addEventListener('close', () => {
-      if (ws !== connection) return;
-      ws = null;
-      if (restartDialog.open) restartDialog.close();
-      if (restartPending) finishRestart('restartUncertain');
-      if (pendingAction) finishAction('actionDisconnected');
-      updateActionButtons();
-      setMessage(connectionStatus, 'reconnecting');
-      if (pendingPrompt) preservePendingPrompt('draftDisconnected');
-      wsDot.classList.remove('connected');
-      wsDot.title = t('reconnecting');
-      if (isAuthenticated) {
-        reconnectTimer = setTimeout(connectWebSocket, 2000);
-      }
-    });
-
-    connection.addEventListener('error', () => {
-      connection.close();
-    });
+    connection.addEventListener('close', () => loseConnection(connection));
+    connection.addEventListener('error', () => loseConnection(connection));
   }
+
+  function stopConnectionTimers() {
+    clearTimeout(heartbeatTimer);
+    clearTimeout(heartbeatDeadline);
+    clearTimeout(connectDeadline);
+    heartbeatTimer = heartbeatDeadline = connectDeadline = null;
+    heartbeatId = null;
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer || !isAuthenticated) return;
+    const key = networkOffline ? 'offline' : document.visibilityState === 'hidden' ? 'suspended' : 'reconnecting';
+    setMessage(connectionStatus, key);
+    wsDot.title = t(key);
+    if (networkOffline || document.visibilityState === 'hidden') return;
+    const delay = reconnectDelay;
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connectWebSocket(); }, delay);
+  }
+
+  function loseConnection(connection) {
+    if (ws !== connection) return;
+    ws = null;
+    connectionHealthy = false;
+    stopConnectionTimers();
+    try { connection.close(); } catch {}
+    if (restartDialog.open) restartDialog.close();
+    if (restartPending) finishRestart('restartUncertain');
+    if (pendingAction) finishAction('actionDisconnected');
+    if (pendingPrompt) preservePendingPrompt('draftDisconnected');
+    wsDot.classList.remove('connected');
+    updateActionButtons();
+    scheduleReconnect();
+  }
+
+  function checkConnection(connection) {
+    if (ws !== connection || connection.readyState !== WebSocket.OPEN || heartbeatId) return;
+    if (document.visibilityState === 'hidden') return;
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = null;
+    heartbeatId = `heartbeat-${++heartbeatSequence}`;
+    // Register the deadline before sending; it belongs only to this connection.
+    heartbeatDeadline = setTimeout(() => loseConnection(connection), 10000);
+    if (!connectionHealthy) {
+      setMessage(connectionStatus, 'checking');
+      wsDot.title = t('checking');
+      updateActionButtons();
+    }
+    try { connection.send(JSON.stringify({ type: 'ping', id: heartbeatId })); }
+    catch { loseConnection(connection); }
+  }
+
+  function resumeConnection() {
+    if (!isAuthenticated || document.visibilityState === 'hidden') return;
+    if (networkOffline) { scheduleReconnect(); return; }
+    resumeSnapshot = true;
+    connectionHealthy = false;
+    wsDot.classList.remove('connected');
+    setMessage(connectionStatus, 'checking');
+    wsDot.title = t('checking');
+    updateActionButtons();
+    if (ws?.readyState === WebSocket.OPEN) checkConnection(ws);
+    else if (ws?.readyState === WebSocket.CONNECTING) {
+      if (!connectDeadline) {
+        const connection = ws;
+        connectDeadline = setTimeout(() => loseConnection(connection), 10000);
+      }
+    }
+    else if (!ws || ws.readyState !== WebSocket.CONNECTING) {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connectWebSocket();
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden') { resumeConnection(); return; }
+    stopConnectionTimers();
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    connectionHealthy = false;
+    wsDot.classList.remove('connected');
+    if (isAuthenticated) setMessage(connectionStatus, 'suspended');
+    updateActionButtons();
+  });
+  window.addEventListener('pageshow', resumeConnection);
+  window.addEventListener('offline', () => {
+    networkOffline = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (ws) loseConnection(ws);
+    else if (isAuthenticated) scheduleReconnect();
+  });
+  window.addEventListener('online', () => { networkOffline = false; resumeConnection(); });
 
   function sendAction(action) {
     if (!isAuthenticated) return;
     if (pendingAction || restartPending) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!connectionHealthy || !ws || ws.readyState !== WebSocket.OPEN) {
       setMessage(actionStatus, 'actionOffline');
       return;
     }
@@ -546,7 +660,7 @@
     }
     if (pendingPrompt?.waiting) return;
     hapticFeedback(20);
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!connectionHealthy || !ws || ws.readyState !== WebSocket.OPEN) {
       setPromptStatus('promptOffline');
       return;
     }
@@ -570,7 +684,7 @@
 
   // Restart PTY session
   btnRestart.addEventListener('click', () => {
-    if (!isAuthenticated || !ws || ws.readyState !== WebSocket.OPEN || pendingAction || restartPending) return;
+    if (!isAuthenticated || !connectionHealthy || !ws || ws.readyState !== WebSocket.OPEN || pendingAction || restartPending) return;
     hapticFeedback(35);
     if (!restartDialog.open) restartDialog.showModal();
   });
@@ -578,7 +692,7 @@
   restartConfirm.addEventListener('click', () => {
     if (!restartDialog.open) return;
     restartDialog.close();
-    if (!isAuthenticated || !ws || ws.readyState !== WebSocket.OPEN || pendingAction || restartPending) return;
+    if (!isAuthenticated || !connectionHealthy || !ws || ws.readyState !== WebSocket.OPEN || pendingAction || restartPending) return;
     restartPending = true;
     setMessage(actionStatus, 'restarting');
     updateActionButtons();

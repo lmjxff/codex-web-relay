@@ -142,6 +142,10 @@ Relay requires the configured hostname and does not create dashboard routes in t
 
 ## Daily use and limits
 
+While the page is in the foreground, Relay probes the connection every 15 seconds, with a 10-second response/connect deadline. Returning from the background or regaining network access checks liveness before enabling terminal input and requests the current shared screen. Reconnection waits 2, 4, 8, 16, then up to 30 seconds; a successful probe resets the delay. Offline/background pages wait for return. Browser suspension can delay timers. Drafts remain available for manual review/retry; commands and shortcut keys are never replayed automatically. A browser reconnect does not restart the host terminal.
+
+The server also pings browser transports every 30 seconds and removes clients that miss the next check, releasing their shared terminal size. Upgrade/restart the server and refresh all browsers to enable both sides of recovery.
+
 The language selector is available before and after sign-in. Chinese/English interface text and terminal font sizes (12/13/15/17 px) are saved in this browser. Switching them preserves the current connection and draft; it does not restart the terminal or translate program output. Expand the workspace name to view its full path.
 
 **Restart** opens a confirmation dialog because it interrupts the shared session for every browser. **Cancel** leaves the session running. After upgrading, restart the Relay server when active work is finished, then refresh every connected browser so the new shortcut protocol is loaded on both sides.
@@ -220,6 +224,8 @@ Scripts should prefer `Authorization: Bearer <relay-credential>` or `x-relay-tok
 WebSocket outputs include `status`, `history`, `output`, and `session-reset`. History/reset messages carry the shared `cols`/`rows`; clients must apply them in order with terminal writes. Ended status includes `kind` (`normal`, `error`, `unknown`) and nullable `exitCode`/`signal`. Send `{ "type": "input", "id": "<unique-id>", "data": "..." }` for `input-ack`/`input-error` with that ID. Input limit: 16 Ki characters; frame limit: 128 KiB. Direct keystrokes without IDs remain supported. Other messages: `resize`, `action`, `restart`, `ping`.
 
 ## Troubleshooting
+
+For liveness, send `{ "type": "ping", "id": "<probe-id>" }`; the server echoes the ID in `pong`. `{ "type": "sync" }` returns the current `status` and parsed `history` without starting a new terminal or sending input.
 
 Shortcut messages may include an ID: `{ "type": "action", "id": "<unique-id>", "action": "enter" }`. The server replies with `action-ack` or `action-error`. An acknowledgement means the key was written to the PTY, not that the running program finished or approved a request. Duplicate IDs for the same key are suppressed for up to five minutes in a bounded in-memory cache; restarting clears it. Lost acknowledgements are reported as uncertain delivery; inspect the terminal before pressing again. Refresh every browser after upgrading both server and client.
 
