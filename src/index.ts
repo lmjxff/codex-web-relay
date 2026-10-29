@@ -867,9 +867,11 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-if (require.main === module) {
+export function startRelay(): void {
   bootstrap().catch(() => {
     console.error('[Startup] Unable to start Relay. Check the workspace, native PTY dependencies, PORT (1-65535) and access credential (24+ characters for public tunnels).');
     gracefulShutdown('startup failed', 1);
   });
 }
+
+if (require.main === module) startRelay();

@@ -4,14 +4,15 @@
   "description": "Control a local Codex CLI from your browser, with no mobile app required, authenticated terminal streaming, Git previews and optional Cloudflare tunnels.",
   "main": "dist/index.js",
   "bin": {
-    "codex-web-relay": "./dist/index.js"
+    "codex-web-relay": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "cf:login": "tsx src/index.ts --cf-login",
+    "dev": "tsx watch src/cli.ts",
+    "start": "tsx src/cli.ts",
+    "cf:login": "tsx src/cli.ts --cf-login",
+    "doctor": "tsx src/cli.ts --doctor",
     "build": "tsc",
-    "serve": "node dist/index.js",
+    "serve": "node dist/cli.js",
     "test": "npm run build && node --test tests/*.test.cjs",
     "prepack": "npm run build"
   },

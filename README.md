@@ -225,6 +225,18 @@ WebSocket outputs include `status`, `history`, `output`, and `session-reset`. Hi
 
 ## Troubleshooting
 
+Run the local diagnostic before starting Relay, from the directory whose `.env` you use:
+
+```bash
+npm run doctor
+npm run doctor -- --json
+# For compiled or installed CLI usage:
+node dist/cli.js --doctor
+# codex-web-relay --doctor
+```
+
+Doctor checks Node, executable discovery for Git/CODEX_CMD, workspace access, Git worktree access, node-pty module loading, HOST/PORT availability and credential/tunnel configuration shape. It reads `.env` with environment-variable overrides, briefly binds and closes the configured local port, and hides credentials, domains and full paths in both text and JSON reports. It does not modify `.env`, run CODEX_CMD, create a terminal, download cloudflared, open a tunnel or contact Cloudflare. An occupied port may simply mean Relay is already running. Exit code `1` means at least one error; warnings alone return `0`. Checks do not prove Codex login, native terminal spawning, DNS or public connectivity. `--lang=zh-CN` selects Chinese output. Review reports before sharing them.
+
 For liveness, send `{ "type": "ping", "id": "<probe-id>" }`; the server echoes the ID in `pong`. `{ "type": "sync" }` returns the current `status` and parsed `history` without starting a new terminal or sending input.
 
 Shortcut messages may include an ID: `{ "type": "action", "id": "<unique-id>", "action": "enter" }`. The server replies with `action-ack` or `action-error`. An acknowledgement means the key was written to the PTY, not that the running program finished or approved a request. Duplicate IDs for the same key are suppressed for up to five minutes in a bounded in-memory cache; restarting clears it. Lost acknowledgements are reported as uncertain delivery; inspect the terminal before pressing again. Refresh every browser after upgrading both server and client.

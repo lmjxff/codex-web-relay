@@ -225,6 +225,18 @@ WebSocket 输出包括 `status`、`history`、`output`、`session-reset`。历�
 
 ## 常见问题
 
+启动 Relay 前，先在存放所用 `.env` 的目录执行本地诊断：
+
+```bash
+npm run doctor -- --lang=zh-CN
+npm run doctor -- --lang=zh-CN --json
+# 使用编译产物或已安装的 CLI 时：
+node dist/cli.js --doctor --lang=zh-CN
+# codex-web-relay --doctor --lang=zh-CN
+```
+
+Doctor 检查 Node、Git/CODEX_CMD 程序是否存在、工作目录与 Git 工作区访问、node-pty 模块加载、HOST/PORT 可用性及访问凭据/隧道配置格式。它读取 `.env`，环境变量优先；短暂绑定配置的本机端口并立即关闭。文本和 JSON 报告均隐藏凭据、域名和完整路径，不修改 `.env`、不执行 CODEX_CMD、不创建终端、不下载 cloudflared、不开隧道、不连接 Cloudflare。端口占用也可能只是 Relay 已运行。存在错误时退出码为 `1`，仅有提示时为 `0`。诊断通过不代表已验证 Codex 登录、原生终端创建、DNS 或公网连通性。分享报告前仍请检查内容。
+
 连接检查发送 `{ "type": "ping", "id": "<检查ID>" }`，服务端在 `pong` 中回传 ID。`{ "type": "sync" }` 返回当前 `status` 和已解析的 `history`，不会新建终端或发送输入。
 
 快捷消息可携带 ID：`{ "type": "action", "id": "<唯一消息ID>", "action": "enter" }`，服务端返回 `action-ack` 或 `action-error`。回执只表示按键已写入 PTY，不代表程序已完成任务或批准请求。同一按键的重复 ID 会在有上限的内存缓存中抑制五分钟，重启会清空。回执丢失会提示送达不确定，请先查看终端再决定是否重按。升级服务端和网页后，请刷新所有浏览器。

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a local `--doctor` command with redacted English/Chinese text or JSON reports, prerequisite/configuration checks and actionable hints, without starting the relay or changing local settings.
+- 中文：新增本地 `--doctor` 环境诊断，提供脱敏的中英文文本或 JSON 报告与修复提示，不启动服务或修改配置。
 - Use Codex Web Relay across browser/lock/pairing pages and startup/terminal logs, and refresh the bilingual README demonstration with the current interface.
 - 中文：统一网页、登录页、配对页及日志中的项目名称，并更新中英文说明中的演示。
 - Check browser connection liveness, revalidate on foreground/network return, and restore a shared snapshot without replaying input. Add bounded reconnect backoff and server transport checks that release stale clients.
