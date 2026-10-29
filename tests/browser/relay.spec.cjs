@@ -67,7 +67,8 @@ test('phone menu navigation redraws one shared screen on both browsers',async({p
     await expect(screen(tab)).toContainText('Working: approved');
     await expect(screen(tab)).not.toContainText('Yes, proceed');
   }
-  expect((await stats(request)).writes).toEqual(['\x1b[B','\x1b[A',process.platform==='win32'?'\r':'\n']);
+  // Enter is a terminal carriage return on every OS; y/n shortcuts use platform EOL.
+  expect((await stats(request)).writes).toEqual(['\x1b[B','\x1b[A','\r']);
 });
 
 test('restart cancellation preserves the session and explicit confirmation resets both views',async({page,context,request})=>{
