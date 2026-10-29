@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add isolated Playwright regressions for desktop/mobile Chromium and mobile WebKit, plus a Linux browser CI job with failure traces, screenshots and reports.
+- 中文：新增桌面/手机尺寸 Chromium、手机尺寸 WebKit 浏览器回归及独立 Linux CI，失败时保存轨迹、截图与报告。
 - Add a local `--doctor` command with redacted English/Chinese text or JSON reports, prerequisite/configuration checks and actionable hints, without starting the relay or changing local settings.
 - 中文：新增本地 `--doctor` 环境诊断，提供脱敏的中英文文本或 JSON 报告与修复提示，不启动服务或修改配置。
 - Use Codex Web Relay across browser/lock/pairing pages and startup/terminal logs, and refresh the bilingual README demonstration with the current interface.

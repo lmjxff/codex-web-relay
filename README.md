@@ -265,6 +265,15 @@ npm test
 npm pack --dry-run
 ```
 
+Real browser regression tests run separately:
+
+```bash
+npx playwright install chromium webkit
+npm run test:browser
+```
+
+The browser suite uses desktop Chromium, mobile Chromium and mobile WebKit with real local HTTP/WebSocket, xterm.js rendering and Git fixtures, plus a scripted PTY. It covers authentication/locking, language/font persistence, shared approval redraws, restart confirmation, offline draft/snapshot recovery, Git file selection/scrolling/error recovery and ended-session reconnection. It binds only loopback on port `43187` (override with `RELAY_E2E_PORT`); an occupied port fails instead of reusing a running server. The fixture clears inherited service settings and uses synthetic credentials. `npm test` remains independent of browser downloads. The additional Linux CI browser job installs browser dependencies; failed runs upload an HTML report, traces and screenshots for seven days. These isolated fixtures contain no real Codex credentials or terminal content. Do not point this suite at your real Relay instance. Mobile browser emulation does not replace physical-device, Codex-account or public-tunnel testing.
+
 Tests cover Git fixtures, authentication/rate limits, HTTP/WebSocket behavior, draft acknowledgement/reconnection, PTY lifecycle, a harmless native command, and simulated tunnel/DNS lifecycle. They do not create real DNS records, open public tunnels, or log into Codex. CI targets Windows/macOS/Linux with Node 22/24; consult the actual workflow result. Phone browsers, Codex interactive prompts, and public network reachability need separate end-to-end checks.
 
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)

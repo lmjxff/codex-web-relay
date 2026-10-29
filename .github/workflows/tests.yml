@@ -32,3 +32,25 @@ jobs:
       - run: npm rebuild node-pty
       - run: npm test
       - run: npm pack --dry-run --ignore-scripts
+
+  browser:
+    name: Browser / Chromium + WebKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-failure-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

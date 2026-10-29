@@ -265,6 +265,15 @@ npm test
 npm pack --dry-run
 ```
 
+真实浏览器回归测试独立运行：
+
+```bash
+npx playwright install chromium webkit
+npm run test:browser
+```
+
+浏览器测试使用桌面 Chromium、手机尺寸 Chromium 和手机尺寸 WebKit，运行真实本地 HTTP/WebSocket、xterm.js 渲染与 Git 样例，PTY 使用脚本模拟。覆盖登录/锁定、语言/字号保存、双端确认菜单重绘、重启确认、离线草稿/画面恢复、Git 文件切换/滚动/失败恢复，以及已结束会话的重连。仅绑定本机回环地址的 `43187` 端口（可用 `RELAY_E2E_PORT` 调整）；端口占用时失败，不复用正在运行的服务。样例清除继承的服务配置并使用合成凭据。`npm test` 仍无需下载浏览器。新增的 Linux 浏览器 CI 会安装浏览器依赖，失败时保存 HTML 报告、轨迹和截图七天；隔离样例中没有真实 Codex 凭据或终端内容。不要将这套测试指向真实 Relay 实例。手机尺寸模拟不能替代真机、Codex 账号及公网隧道验证。
+
 测试覆盖 Git 样例仓库、鉴权限流、HTTP/WebSocket、草稿确认与重连、终端生命周期、无害原生命令，以及模拟隧道/DNS 生命周期。测试不创建真实 DNS、不打开公网隧道、不登录 Codex。CI 目标为 Windows/macOS/Linux 与 Node 22/24，请以实际工作流结果为准。真实手机浏览器、Codex 交互提示和公网连通性需要额外端到端验证。
 
 [参与贡献](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [MIT 许可](LICENSE)
