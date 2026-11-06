@@ -277,3 +277,8 @@ The browser suite uses desktop Chromium, mobile Chromium and mobile WebKit with 
 Tests cover Git fixtures, authentication/rate limits, HTTP/WebSocket behavior, draft acknowledgement/reconnection, PTY lifecycle, a harmless native command, and simulated tunnel/DNS lifecycle. They do not create real DNS records, open public tunnels, or log into Codex. CI targets Windows/macOS/Linux with Node 22/24; consult the actual workflow result. Phone browsers, Codex interactive prompts, and public network reachability need separate end-to-end checks.
 
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+
+## Community
+
+This open-source project has linked to and acknowledges the [LINUX DO](https://linux.do) community.
+
