@@ -277,3 +277,7 @@ npm run test:browser
 测试覆盖 Git 样例仓库、鉴权限流、HTTP/WebSocket、草稿确认与重连、终端生命周期、无害原生命令，以及模拟隧道/DNS 生命周期。测试不创建真实 DNS、不打开公网隧道、不登录 Codex。CI 目标为 Windows/macOS/Linux 与 Node 22/24，请以实际工作流结果为准。真实手机浏览器、Codex 交互提示和公网连通性需要额外端到端验证。
 
 [参与贡献](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [MIT 许可](LICENSE)
+
+## 社区
+
+本开源项目已链接并认可 [LINUX DO 社区](https://linux.do)。
